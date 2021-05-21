@@ -1,0 +1,20 @@
+# Runs all unit and spec tests
+{{> job-header.yml}}
+resource_class: large
+parallelism: 8
+steps:
+  - checkout
+  - attach_workspace:
+      at: .
+  - run: npx hardhat compile --showsize --optimizer
+  - run:
+      name: Test and output gas used
+      command: |
+        set +e
+        circleci tests glob 'test/contracts/*.js' |
+        circleci tests split |
+        xargs npm test
+        EXIT_CODE=$?
+        cat test-gas-used.log
+        printf "\\n"
+        exit $EXIT_CODE
