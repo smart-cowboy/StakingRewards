@@ -775,9 +775,7 @@ contract('StakingRewards', accounts => {
 			try {
 				await stakingRewards.destroy(restoreAddress, { from: ownerAddress });
 			} catch (error) {
-				if (reason) {
-					assert.include(error.message, reason);
-				}
+				assert.include(error.message, "Tokens are not fully restored");
 			}
 		});
 	});
