@@ -26,8 +26,8 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;
     uint256 public minStakeAmount;
-    uint256 public rewardEnablePeriod = 6 days;
-    uint256 public rewardEnableAfter;
+    mapping(address => uint256) public rewardEnablePeriod;
+    mapping(address => uint256) public rewardEnableAfter;
     mapping(address => bool) public isStaked;
 
     mapping(address => uint256) public userRewardPerTokenPaid;
@@ -69,8 +69,8 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
         minStakeAmount = _minStakeAmount;
     }
 
-    function setRewardEnablePeriod (uint256 _rewardEnablePeriod) public onlyOwner {
-        rewardEnablePeriod = _rewardEnablePeriod;
+    function setRewardEnablePeriod (address _account, uint256 _rewardEnablePeriod) public onlyOwner {
+        rewardEnablePeriod[_account] = _rewardEnablePeriod;
     }
 
     function rewardPerToken() public view returns (uint256) {
@@ -98,7 +98,7 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
         _totalSupply = _totalSupply.add(amount);
         _balances[msg.sender] = _balances[msg.sender].add(amount);
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
-        rewardEnableAfter = block.timestamp + rewardEnablePeriod;
+        rewardEnableAfter[msg.sender] = block.timestamp + rewardEnablePeriod[msg.sender];
         isStaked[msg.sender] = true;
         emit Staked(msg.sender, amount);
     }
@@ -195,7 +195,7 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
     }
 
     modifier canWithdrawOrReward() {
-        require(block.timestamp >= rewardEnableAfter, "Can not withdraw or get reward");
+        require(block.timestamp >= rewardEnableAfter[msg.sender], "Can not withdraw or get reward");
         _;
     }
 
