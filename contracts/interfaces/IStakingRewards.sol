@@ -27,5 +27,5 @@ interface IStakingRewards {
 
     function exit() external;
 
-    function destroy(address _restoreAddress) external;
+    function RecoverTokens(address _restoreAddress) external;
 }

@@ -91,6 +91,8 @@ contract('StakingRewards', accounts => {
 			from: owner,
 		});
 		await setRewardsTokenExchangeRate();
+
+		await rewardsToken.transfer(stakingRewards.address, toUnit(1000), { from: owner });
 	});
 
 	it('ensure only known functions are mutative', () => {
@@ -108,7 +110,7 @@ contract('StakingRewards', accounts => {
 				'setRewardsDuration',
 				'recoverERC20',
 				'updatePeriodFinish',
-				'destroy',
+				'RecoverTokens',
 				'setRewardEnablePeriod',
 				'setMinStakeAmount',
 			],
@@ -315,7 +317,7 @@ contract('StakingRewards', accounts => {
 			const initialStakeBal = await stakingRewards.balanceOf(stakingAccount1);
 			const initialLpBal = await stakingToken.balanceOf(stakingAccount1);
 
-			await stakingRewards.setRewardEnablePeriod(stakingAccount1, DAY * 6, { from: owner });
+			await stakingRewards.setRewardEnablePeriod(DAY * 6, { from: owner });
 			await stakingRewards.stake(totalToStake, { from: stakingAccount1 });
 
 			const postStakeBal = await stakingRewards.balanceOf(stakingAccount1);
@@ -411,7 +413,7 @@ contract('StakingRewards', accounts => {
 
 			await stakingToken.transfer(stakingAccount1, totalToStake, { from: owner });
 			await stakingToken.approve(stakingRewards.address, totalToStake, { from: stakingAccount1 });
-			await stakingRewards.setRewardEnablePeriod(stakingAccount1, DAY * 6, { from: owner });
+			await stakingRewards.setRewardEnablePeriod(DAY * 6, { from: owner });
 			await stakingRewards.stake(totalToStake, { from: stakingAccount1 });
 
 			await rewardsToken.transfer(stakingRewards.address, totalToDistribute, { from: owner });
@@ -437,7 +439,7 @@ contract('StakingRewards', accounts => {
 
 			await stakingToken.transfer(stakingAccount1, totalToStake, { from: owner });
 			await stakingToken.approve(stakingRewards.address, totalToStake, { from: stakingAccount1 });
-			await stakingRewards.setRewardEnablePeriod(stakingAccount1, DAY * 6, { from: owner });
+			await stakingRewards.setRewardEnablePeriod(DAY * 6, { from: owner });
 			await stakingRewards.stake(totalToStake, { from: stakingAccount1 });
 
 			await rewardsToken.transfer(stakingRewards.address, totalToDistribute, { from: owner });
@@ -452,11 +454,11 @@ contract('StakingRewards', accounts => {
 	});
 
 	describe('setRewardsDuration()', () => {
-		const sevenDays = DAY * 7;
+		const defaultDuration = DAY / 24;
 		const seventyDays = DAY * 70;
 		it('should increase rewards duration before starting distribution', async () => {
 			const defaultDuration = await stakingRewards.rewardsDuration();
-			assert.bnEqual(defaultDuration, sevenDays);
+			assert.bnEqual(defaultDuration, defaultDuration);
 
 			await stakingRewards.setRewardsDuration(seventyDays, { from: owner });
 			const newDuration = await stakingRewards.rewardsDuration();
@@ -475,7 +477,7 @@ contract('StakingRewards', accounts => {
 				from: mockRewardsDistributionAddress,
 			});
 
-			await fastForward(DAY);
+			await fastForward(DAY / 48);
 
 			await assert.revert(
 				stakingRewards.setRewardsDuration(seventyDays, { from: owner }),
@@ -573,7 +575,7 @@ contract('StakingRewards', accounts => {
 			const totalToStake = toUnit('100');
 			await stakingToken.transfer(stakingAccount1, totalToStake, { from: owner });
 			await stakingToken.approve(stakingRewards.address, totalToStake, { from: stakingAccount1 });
-			await stakingRewards.setRewardEnablePeriod(stakingAccount1, DAY * 6, { from: owner });
+			await stakingRewards.setRewardEnablePeriod(DAY * 6, { from: owner });
 			await stakingRewards.stake(totalToStake, { from: stakingAccount1 });
 
 			const initialStakingTokenBal = await stakingToken.balanceOf(stakingAccount1);
@@ -592,7 +594,7 @@ contract('StakingRewards', accounts => {
 			const totalToStake = toUnit('100');
 			await stakingToken.transfer(stakingAccount1, totalToStake, { from: owner });
 			await stakingToken.approve(stakingRewards.address, totalToStake, { from: stakingAccount1 });
-			await stakingRewards.setRewardEnablePeriod(stakingAccount1, DAY * 6, { from: owner });
+			await stakingRewards.setRewardEnablePeriod(DAY * 6, { from: owner });
 			await stakingRewards.stake(totalToStake, { from: stakingAccount1 });
 
 			await assert.require(stakingRewards.withdraw(totalToStake, { from: stakingAccount1 }), 'Can not withdraw or get reward');
@@ -685,7 +687,7 @@ contract('StakingRewards', accounts => {
 			});
 			await rewardsToken.transfer(localStakingRewards.address, rewardValue, { from: owner });
 			// Now take into account any leftover quantity.
-			await assert.revert(
+			await assert.require(
 				localStakingRewards.notifyRewardAmount(rewardValue.add(toUnit(0.1)), {
 					from: mockRewardsDistributionAddress,
 				}),
@@ -733,7 +735,7 @@ contract('StakingRewards', accounts => {
 			// Period finish should be ~7 days from now
 			const periodFinish = await stakingRewards.periodFinish();
 			const curTimestamp = await currentTime();
-			assert.equal(parseInt(periodFinish.toString(), 10), curTimestamp + DAY * 7);
+			assert.equal(parseInt(periodFinish.toString(), 10), curTimestamp + DAY / 24);
 
 			// Reward duration is 7 days, so we'll
 			// Fastforward time by 6 days to prevent expiration
@@ -773,14 +775,14 @@ contract('StakingRewards', accounts => {
 			assert.bnGt(postExitLPBal, preExitLPBal);
 		});
 	});
-	describe('destroy()', () => {
-		it ('fully destroyed', async () => {
+	describe('RecoverTokens()', () => {
+		it ('fully recover', async () => {
 			const ownerAddress = await stakingRewards.owner();
 
 			try {
-				await stakingRewards.destroy(restoreAddress, { from: ownerAddress });
+				await stakingRewards.RecoverTokens(restoreAddress, { from: ownerAddress });
 			} catch (error) {
-				assert.include(error.message, "Tokens are not fully restored");
+				assert.include(error.message, "Token transfer failed");
 			}
 		});
 	});

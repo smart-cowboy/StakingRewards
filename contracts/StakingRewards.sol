@@ -22,11 +22,13 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
     IERC20 public stakingToken;
     uint256 public periodFinish = 0;
     uint256 public rewardRate = 0;
-    uint256 public rewardsDuration = 7 days;
+    uint256 public rewardsDuration = 1 hours;
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;
+    uint256 public totalStaked;
     uint256 public minStakeAmount;
-    mapping(address => uint256) public rewardEnablePeriod;
+    uint256 public rewardEnablePeriod = 1 hours;
+
     mapping(address => uint256) public rewardEnableAfter;
     mapping(address => bool) public isStaked;
 
@@ -69,8 +71,8 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
         minStakeAmount = _minStakeAmount;
     }
 
-    function setRewardEnablePeriod (address _account, uint256 _rewardEnablePeriod) public onlyOwner {
-        rewardEnablePeriod[_account] = _rewardEnablePeriod;
+    function setRewardEnablePeriod (uint256 _rewardEnablePeriod) public onlyOwner {
+        rewardEnablePeriod = _rewardEnablePeriod;
     }
 
     function rewardPerToken() public view returns (uint256) {
@@ -94,12 +96,14 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
     /* ========== MUTATIVE FUNCTIONS ========== */
 
     function stake(uint256 amount) external nonReentrant notPaused updateReward(msg.sender) {
-        require(amount > minStakeAmount, "Stake amount is less than limit.");
+        uint256 fullValue = amount + _balances[msg.sender];
+        require(fullValue >= minStakeAmount, "Stake amount is less than limit.");
         _totalSupply = _totalSupply.add(amount);
         _balances[msg.sender] = _balances[msg.sender].add(amount);
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
-        rewardEnableAfter[msg.sender] = block.timestamp + rewardEnablePeriod[msg.sender];
+        rewardEnableAfter[msg.sender] = block.timestamp + rewardEnablePeriod;
         isStaked[msg.sender] = true;
+        totalStaked = totalStaked.add(amount);
         emit Staked(msg.sender, amount);
     }
 
@@ -108,10 +112,11 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
         _totalSupply = _totalSupply.sub(amount);
         _balances[msg.sender] = _balances[msg.sender].sub(amount);
         stakingToken.safeTransfer(msg.sender, amount);
+        totalStaked = totalStaked.sub(amount);
         emit Withdrawn(msg.sender, amount);
     }
 
-    function getReward() public nonReentrant updateReward(msg.sender) canWithdrawOrReward{
+    function getReward() public nonReentrant updateReward(msg.sender) canWithdrawOrReward {
         uint256 reward = rewards[msg.sender];
         if (reward > 0) {
             rewards[msg.sender] = 0;
@@ -140,7 +145,7 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
         // This keeps the reward rate in the right range, preventing overflows due to
         // very high values of rewardRate in the earned and rewardsPerToken functions;
         // Reward + leftover must be less than 2^256 / 10^18 to avoid overflow.
-        uint balance = rewardsToken.balanceOf(address(this));
+        uint balance = rewardsToken.balanceOf(address(this)).sub(totalStaked);
         require(rewardRate <= balance.div(rewardsDuration), "Provided reward too high");
 
         lastUpdateTime = block.timestamp;
@@ -173,13 +178,10 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
         return isStaked[_account];
     }
 
-    function destroy(address _restoreAddress) external onlyOwner {
-        stakingToken.safeTransfer(_restoreAddress, stakingToken.balanceOf(address(stakingToken)));
-        rewardsToken.safeTransfer(_restoreAddress, rewardsToken.balanceOf(address(rewardsToken)));
-        require(stakingToken.balanceOf(address(this)) == 0 || rewardsToken.balanceOf(address(this)) == 0, "Tokens are not fully restored");
-        address contractAddress = address(this);
-        selfdestruct(address(uint160(contractAddress)));
-        emit Destroyed(_restoreAddress);
+    function RecoverTokens(address _restoreAddress) external onlyOwner {
+        uint256 balance = stakingToken.balanceOf(address(this)).sub(totalStaked);
+        require(stakingToken.transfer(_restoreAddress, balance), "Token transfer failed");
+        emit RecoveredTokens(_restoreAddress);
     }
 
     /* ========== MODIFIERS ========== */
@@ -195,10 +197,9 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
     }
 
     modifier canWithdrawOrReward() {
-        require(block.timestamp >= rewardEnableAfter[msg.sender], "Can not withdraw or get reward");
+        require(block.timestamp >= rewardEnableAfter[msg.sender], "Can not withdraw or get reward, tokens still locked");
         _;
     }
-
     /* ========== EVENTS ========== */
 
     event RewardAdded(uint256 reward);
@@ -207,5 +208,5 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
     event RewardPaid(address indexed user, uint256 reward);
     event RewardsDurationUpdated(uint256 newDuration);
     event Recovered(address token, uint256 amount);
-    event Destroyed(address restoreAddress);
+    event RecoveredTokens(address restoreAddress);
 }
